@@ -37,22 +37,26 @@ pub fn main_fs(
 pub fn fullscreen_quad_gen_vs(
     #[spirv(vertex_index)] vertex_index: u32,
     #[spirv(position)] out_pos: &mut Vec4,
+    out_uv: &mut Vec2,
 ) {
-    let outUV = Vec2::new(
+    let mut outUV = Vec2::new(
         ((vertex_index << 1) & 2) as f32,
         (vertex_index & 2) as f32,
     );
     *out_pos = Vec4::new(outUV.x * 2.0 - 1.0,outUV.y * 2.0 - 1.0, 0.0, 1.0);
+    *out_uv = outUV;
 }
 
 #[spirv(fragment)]
 pub fn quad_copy_fs(
+    uv: Vec2,
     #[spirv(descriptor_set = 0, binding = 0)] framebuf: &Image2d,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(uniform, descriptor_set = 1, binding = 0)] scene_consts: &SceneConstants,
     #[spirv(frag_coord)] in_frag_coord: Vec4,
     output: &mut Vec4,
 ) {    
-    *output = framebuf.sample(*sampler, in_frag_coord.xy());
+    *output = framebuf.sample(*sampler, uv);
 }
 
 fn intensity(col: Vec4) -> f32 {

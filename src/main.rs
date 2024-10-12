@@ -39,7 +39,7 @@ fn main() -> Result {
     env_logger::builder().filter_level(LevelFilter::Info).init();
 
     let event_loop = EventLoop::new()?;
-    let window = WindowBuilder::new().with_title("Chaotic Attractors").build(&event_loop)?;
+    let window = WindowBuilder::new().with_title("watercolor").build(&event_loop)?;
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
     let surface = unsafe { instance.create_surface(&window)? };
@@ -274,7 +274,7 @@ fn main() -> Result {
 
     // FRAME BUFFER
     let framebuf_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
-    let mut framebuf = device.create_texture(&wgpu::TextureDescriptor {
+    let framebuf = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size,
         mip_level_count: 1,
@@ -372,6 +372,7 @@ fn main() -> Result {
     let pipeline_2_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         bind_group_layouts: &[
             &framebuf_bind_group_layout,
+            &scene_bind_group_layout,
         ],
         push_constant_ranges: &[],
         label: None,
@@ -542,7 +543,6 @@ fn main() -> Result {
                 render_pass.draw_indexed(0..(obj.indices.len() as _), 0, 0..1);
                 drop(render_pass);
 
-                //framebuf_view = framebuf.create_view(&wgpu::TextureViewDescriptor::default());
                 framebuf_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                         layout: &framebuf_bind_group_layout,
                         entries: &[
@@ -580,6 +580,7 @@ fn main() -> Result {
                 });
                 render_pass.set_pipeline(&pipeline_2);
                 render_pass.set_bind_group(0, &framebuf_bind_group, &[]);
+                render_pass.set_bind_group(1, &scene_bind_group, &[]);
                 render_pass.draw(0..3, 0..1);
                 drop(render_pass);
                 
