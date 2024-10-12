@@ -381,6 +381,36 @@ fn main() -> Result {
         layout: Some(&pipeline_2_layout),
         vertex: wgpu::VertexState {
             module: &shader,
+            entry_point: "edge_detection_vs",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "edge_detection_fs",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: FORMAT,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        label: None,
+    });
+
+    let pipeline_3_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        bind_group_layouts: &[
+            &framebuf_bind_group_layout,
+        ],
+        push_constant_ranges: &[],
+        label: None,
+    });
+    let pipeline_3 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        layout: Some(&pipeline_3_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
             entry_point: "fullscreen_quad_gen_vs",
             buffers: &[],
         },
@@ -505,7 +535,7 @@ fn main() -> Result {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                // Render pass to framebuffer
+                // Render pass to framebuffer (initial base color & texture)
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &framebuf_view,
@@ -543,22 +573,7 @@ fn main() -> Result {
                 render_pass.draw_indexed(0..(obj.indices.len() as _), 0, 0..1);
                 drop(render_pass);
 
-                framebuf_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout: &framebuf_bind_group_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                              binding: 0,
-                              resource: wgpu::BindingResource::TextureView(&framebuf_view),
-                            },
-                            wgpu::BindGroupEntry {
-                              binding: 1,
-                              resource: wgpu::BindingResource::Sampler(&framebuf_sampler),
-                            },
-                        ],
-                        label: None,
-                });
-
-                //render pass: framebuf -> surface view
+                //render pass: edge detection
                 render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &surface_view,
@@ -581,6 +596,33 @@ fn main() -> Result {
                 render_pass.set_pipeline(&pipeline_2);
                 render_pass.set_bind_group(0, &framebuf_bind_group, &[]);
                 render_pass.set_bind_group(1, &scene_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, vtx_buf.slice(..));
+                render_pass.set_index_buffer(idx_buf.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..(obj.indices.len() as _), 0, 0..1);
+                drop(render_pass);
+                
+                //render pass: framebuf -> surface view
+                render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 240.0,
+                                g: 236.0,
+                                b: 225.0,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    label: None,
+                });
+                render_pass.set_pipeline(&pipeline_3);
+                render_pass.set_bind_group(0, &framebuf_bind_group, &[]);
                 render_pass.draw(0..3, 0..1);
                 drop(render_pass);
                 
@@ -640,6 +682,20 @@ fn main() -> Result {
                     view_formats: &[],
                 });
                 framebuf_view = framebuf.create_view(&wgpu::TextureViewDescriptor::default());
+                framebuf_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        layout: &framebuf_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                              binding: 0,
+                              resource: wgpu::BindingResource::TextureView(&framebuf_view),
+                            },
+                            wgpu::BindGroupEntry {
+                              binding: 1,
+                              resource: wgpu::BindingResource::Sampler(&framebuf_sampler),
+                            },
+                        ],
+                        label: None,
+                });
             }
             _ => {}
         },

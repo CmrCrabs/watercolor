@@ -12,7 +12,6 @@ use shared::SceneConstants;
 pub fn main_vs(
     pos: Vec3,
     tex_coords: Vec2,
-    normal: Vec3,
     #[spirv(uniform, descriptor_set = 0, binding = 0)] camera_view_proj: &Mat4,
     #[spirv(position)] out_pos: &mut Vec4,
     out_tex_coord: &mut Vec2,
@@ -31,20 +30,58 @@ pub fn main_fs(
     *output = texture.sample(*sampler, in_tex);
 }
 
-
 // Render Pass 2
+#[spirv(vertex)]
+pub fn edge_detection_vs(
+    pos: Vec3,
+    #[spirv(position)] out_pos: &mut Vec4,
+) {
+    *out_pos = pos.extend(1.0);
+}
+
+#[spirv(fragment)]
+pub fn edge_detection_fs(
+    #[spirv(descriptor_set = 0, binding = 0)] framebuf: &Image2d,
+    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(uniform, descriptor_set = 1, binding = 0)] scene_consts: &SceneConstants,
+    #[spirv(frag_coord)] in_frag_coord: Vec4,
+    output: &mut Vec4,
+) {  
+    let frag_coord = in_frag_coord.xy();
+    
+    let tleft = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(-1.0, 1.0)));
+    let left = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(-1.0, 0.0)));
+    let bleft = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(-1.0, -1.0)));
+    let tright = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(1.0, 1.0)));
+    let right = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(1.0, 0.0)));
+    let bright = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(1.0, -1.0)));
+    let top = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(0.0, 1.0)));
+    let bottom = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(0.0, -1.0)));
+
+    let g_x = tleft + 2.0 * left + bleft - tright - 2.0 * right - bright;
+    let g_y = -tleft - 2.0 * top - tright + bleft + 2.0 * bottom + bright;
+    let c = (g_x * g_x + g_y * g_y).sqrt();  
+
+    *output = Vec4::new(c,c,c,1.0);
+}
+
+fn intensity(col: Vec4) -> f32 {
+    (col.x * col.x + col.y * col.y + col.z * col.z).sqrt()
+}
+
+// Render Pass 3
 #[spirv(vertex)]
 pub fn fullscreen_quad_gen_vs(
     #[spirv(vertex_index)] vertex_index: u32,
     #[spirv(position)] out_pos: &mut Vec4,
     out_uv: &mut Vec2,
 ) {
-    let mut outUV = Vec2::new(
+    let out_uv1 = Vec2::new(
         ((vertex_index << 1) & 2) as f32,
         (vertex_index & 2) as f32,
     );
-    *out_pos = Vec4::new(outUV.x * 2.0 - 1.0,outUV.y * 2.0 - 1.0, 0.0, 1.0);
-    *out_uv = outUV;
+    *out_pos = Vec4::new(out_uv1.x * 2.0 - 1.0,out_uv1.y * 2.0 - 1.0, 0.0, 1.0);
+    *out_uv = out_uv1;
 }
 
 #[spirv(fragment)]
@@ -52,29 +89,12 @@ pub fn quad_copy_fs(
     uv: Vec2,
     #[spirv(descriptor_set = 0, binding = 0)] framebuf: &Image2d,
     #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
-    #[spirv(uniform, descriptor_set = 1, binding = 0)] scene_consts: &SceneConstants,
     #[spirv(frag_coord)] in_frag_coord: Vec4,
     output: &mut Vec4,
 ) {    
-    *output = framebuf.sample(*sampler, uv);
-}
-
-fn intensity(col: Vec4) -> f32 {
-    (col.x * col.x + col.y * col.y + col.z * col.z).sqrt()
+    *output = framebuf.sample(*sampler, Vec2::new(uv.x, 1.0 - uv.y));
 }
 
 
-    //let frag_coord = Vec2::new(in_frag_coord.x,in_frag_coord.y);
-    //
-    //let tleft = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(-1.0, 1.0)));
-    //let left = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(-1.0, 0.0)));
-    //let bleft = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(-1.0, -1.0)));
-    //let tright = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(1.0, 1.0)));
-    //let right = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(1.0, 0.0)));
-    //let bright = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(1.0, -1.0)));
-    //let top = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(0.0, 1.0)));
-    //let bottom = intensity(framebuf.sample(*sampler, frag_coord + Vec2::new(0.0, -1.0)));
 
-    //let g_x = tleft + 2.0 * left + bleft - tright - 2.0 * right - bright;
-    //let g_y = -tleft - 2.0 * top - tright + bleft + 2.0 * bottom + bright;
-    //let magnitude = (g_x * g_x + g_y * g_y).sqrt();
+
