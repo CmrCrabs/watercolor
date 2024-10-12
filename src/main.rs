@@ -253,7 +253,7 @@ fn main() -> Result {
      });
 
     // DEPTH BUFFER
-    const TEX_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
     let size = wgpu::Extent3d {
         width: window.inner_size().width,
         height: window.inner_size().height,
@@ -266,45 +266,60 @@ fn main() -> Result {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: TEX_FORMAT,
+        format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
     let mut depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     // FRAME BUFFER
-    let framebuf = device.create_texture(&wgpu::TextureDescriptor {
+    let framebuf_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+    let mut framebuf = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: TEX_FORMAT,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+        format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         view_formats: &[],
     });
-    let framebuf_view = framebuf.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut framebuf_view = framebuf.create_view(&wgpu::TextureViewDescriptor::default());
     
     let framebuf_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            ty: wgpu::BindingType::Texture {
-              sample_type: wgpu::TextureSampleType::Float { filterable: false },
-              view_dimension: wgpu::TextureViewDimension::D2,
-              multisampled: false,
+        entries: &[
+            BindGroupLayoutEntry {
+              binding: 0,
+              visibility: wgpu::ShaderStages::FRAGMENT,
+              ty: wgpu::BindingType::Texture {
+                  sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                  view_dimension: wgpu::TextureViewDimension::D2,
+                  multisampled: false,
+              },
+              count: None,
             },
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            count: None,
-        }],
-        label: None,
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                count: None,
+            },
+       ],
+       label: None,
     });
 
-    let framebuf_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    let mut framebuf_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &framebuf_bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&framebuf_view),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+              binding: 0,
+              resource: wgpu::BindingResource::TextureView(&framebuf_view),
+            },
+            wgpu::BindGroupEntry {
+              binding: 1,
+              resource: wgpu::BindingResource::Sampler(&framebuf_sampler),
+            },
+        ],
         label: None,
     });
 
@@ -314,10 +329,8 @@ fn main() -> Result {
     // PIPELINE
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         bind_group_layouts: &[
-            &texture_bind_group_layout,
             &camera_bind_group_layout,
-            &scene_bind_group_layout,
-            &framebuf_bind_group_layout,
+            &texture_bind_group_layout,
         ],
         push_constant_ranges: &[],
         label: None,
@@ -345,7 +358,7 @@ fn main() -> Result {
         }),
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: Some(wgpu::DepthStencilState {
-            format: TEX_FORMAT,
+            format: DEPTH_FORMAT,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
@@ -357,7 +370,9 @@ fn main() -> Result {
     });
 
     let pipeline_2_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        bind_group_layouts: &[],
+        bind_group_layouts: &[
+            &framebuf_bind_group_layout,
+        ],
         push_constant_ranges: &[],
         label: None,
     });
@@ -527,6 +542,22 @@ fn main() -> Result {
                 render_pass.draw_indexed(0..(obj.indices.len() as _), 0, 0..1);
                 drop(render_pass);
 
+                //framebuf_view = framebuf.create_view(&wgpu::TextureViewDescriptor::default());
+                framebuf_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        layout: &framebuf_bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                              binding: 0,
+                              resource: wgpu::BindingResource::TextureView(&framebuf_view),
+                            },
+                            wgpu::BindGroupEntry {
+                              binding: 1,
+                              resource: wgpu::BindingResource::Sampler(&framebuf_sampler),
+                            },
+                        ],
+                        label: None,
+                });
+
                 //render pass: framebuf -> surface view
                 render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -548,6 +579,7 @@ fn main() -> Result {
                     label: None,
                 });
                 render_pass.set_pipeline(&pipeline_2);
+                render_pass.set_bind_group(0, &framebuf_bind_group, &[]);
                 render_pass.draw(0..3, 0..1);
                 drop(render_pass);
                 
@@ -590,11 +622,23 @@ fn main() -> Result {
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: TEX_FORMAT,
+                    format: DEPTH_FORMAT,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 });
                 depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+                // FIXING FRAMEBUFFER
+                let framebuf = device.create_texture(&wgpu::TextureDescriptor {
+                    label: None,
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: FORMAT,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                framebuf_view = framebuf.create_view(&wgpu::TextureViewDescriptor::default());
             }
             _ => {}
         },

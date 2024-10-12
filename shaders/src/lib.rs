@@ -1,6 +1,6 @@
 #![no_std]
 
-use spirv_std::glam::{Vec3, Vec4,Vec2, Mat4};
+use spirv_std::glam::{Vec3, Vec4,Vec2,Vec4Swizzles, Mat4};
 use spirv_std::spirv;
 use spirv_std::Sampler;
 use spirv_std::image::Image2d;
@@ -47,10 +47,12 @@ pub fn fullscreen_quad_gen_vs(
 
 #[spirv(fragment)]
 pub fn quad_copy_fs(
-    in_pos: Vec4,
+    #[spirv(descriptor_set = 0, binding = 0)] framebuf: &Image2d,
+    #[spirv(descriptor_set = 0, binding = 1)] sampler: &Sampler,
+    #[spirv(frag_coord)] in_frag_coord: Vec4,
     output: &mut Vec4,
 ) {    
-    *output = Vec4::new(1.0,0.2,0.9,1.0);
+    *output = framebuf.sample(*sampler, in_frag_coord.xy());
 }
 
 fn intensity(col: Vec4) -> f32 {
